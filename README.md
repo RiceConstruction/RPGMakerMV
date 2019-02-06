@@ -7,7 +7,7 @@
 クレジット表記は不要です。
 もしも表記される場合は以下の内容をご記入ください。
 
-米工事 (https://github.com/RiceConstruction)
+べるろ＊ (https://github.com/RiceConstruction)
 
 
 使用の連絡も不要ですが、ご連絡をいただけると喜びます。
