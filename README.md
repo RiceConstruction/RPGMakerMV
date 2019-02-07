@@ -23,4 +23,5 @@ Twitter: https://twitter.com/riceconstr
 | プラグイン |  説明 |
 |:-----------|:-------------|
 | [Ricon_BattleTransition](Ricon_BattleTransition.js) | 戦闘開始時トランジション効果の変更 |
+| [Ricon_RandomItemLose](Ricon_RandomItemLose.js) | 所持品のランダム消失 |
 | [Ricon_SGHint](Ricon_SGHint.js) | トリアコンタン様のSceneGlossaryに入手ヒントを追加 |
