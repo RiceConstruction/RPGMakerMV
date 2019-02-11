@@ -1,12 +1,13 @@
 //=============================================================================
 // Ricon_RandomItemLose.js
-// Version: 1.0.0
+// Version: 1.0.1
 //----------------------------------------------------------------------------
 // Copyright (c) 2019 Ricon
 // Released under the MIT license
 // http://opensource.org/licenses/mit-license.php
 //----------------------------------------------------------------------------
 // Versions
+// 1.0.1 2019/02/11 SE設定を行わないとエラーが出る不具合を修正
 // 1.0.0 2019/02/07 初版
 //----------------------------------------------------------------------------
 // [Website] https://riceconstruction.weebly.com/
@@ -473,8 +474,7 @@
 
     RRIL.operateLose = function() {
         var sound = this.game.sound;
-        console.log(sound);
-        if(sound['name']) {
+        if(sound && sound['name']) {
             sound['name'] = String(sound['name']);
             sound['volume'] = Number(sound['volume']);
             sound['pitch'] = Number(sound['pitch']);
