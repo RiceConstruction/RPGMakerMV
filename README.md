@@ -25,3 +25,4 @@ Twitter: https://twitter.com/riceconstr
 | [Ricon_BattleTransition](Ricon_BattleTransition.js) | 戦闘開始時トランジション効果の変更 |
 | [Ricon_RandomItemLose](Ricon_RandomItemLose.js) | 所持品のランダム消失 |
 | [Ricon_SGHint](Ricon_SGHint.js) | トリアコンタン様のSceneGlossaryに入手ヒントを追加 |
+| [Ricon_TweakVolume](Ricon_TweakVolume.js) | オプション画面での音量変化量の設定 |
