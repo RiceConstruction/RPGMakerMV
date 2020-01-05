@@ -7,6 +7,7 @@
 // http://opensource.org/licenses/mit-license.php
 //----------------------------------------------------------------------------
 // Versions
+// 2.0.0 2020/01/05 記述方法をECMA6に対応、最大値・最小値設定の不具合を修正
 // 1.0.1 2019/02/11 SE設定を行わないとエラーが出る不具合を修正
 // 1.0.0 2019/02/07 初版
 //----------------------------------------------------------------------------
@@ -153,7 +154,7 @@
  * @on 有効
  * @off 無効
  * @default false
- * @desc 消失するものに武器を含む
+ * @desc 消失するものに防具を含む
  * デフォルト：off(無効)
  * 
  * @param IncludeImportants
@@ -232,363 +233,542 @@
  * @desc SEの位相
  */
 
+'use strict';
 
-(function(){
-    'use strict'
-
-    //=============================================================================
-    // プラグインパラメータ
-    //=============================================================================
-
-    var parameters = PluginManager.parameters('Ricon_RandomItemLose');
-
-    var getParamBoolean = function(paramName) {
-        var value = parameters[paramName];
-        return (value || '').toUpperCase() === 'ON' || (value || '').toUpperCase() === 'TRUE';
-    };
-
-    var getParamNumber = function(paramName) {
-        var value = parameters[paramName];
-        return (parseInt(value, 10) || 0).clamp(-Infinity,Infinity);
-    };
-
-    var getParamString = function(paramName) {
-        var value = parameters[paramName];
-        return String(value);
-    };
-
-    var paramParse = function(obj) {
-        return JSON.parse(JSON.stringify(obj, paramReplace));
-    };
-
-    var paramReplace = function(key, value) {
-        try {
-            return JSON.parse(value || null);
-        } catch (e) {
-            return value;
-        }
-    };
-
-    var RRIL = {};
-    RRIL.game = {};
-    RRIL.game.includeItems = getParamBoolean('IncludeItems');
-    RRIL.game.includeWeapons = getParamBoolean('IncludeWeapons');
-    RRIL.game.includeArmors = getParamBoolean('IncludeArmors');
-    RRIL.game.includeImportants = getParamBoolean('IncludeImportants');
-    RRIL.game.includeEquips = getParamBoolean('IncludeEquips');
-    RRIL.game.minCount = getParamNumber('MinCount');
-    RRIL.game.maxCount = getParamNumber('MaxCount');
-    RRIL.game.variousItems = getParamBoolean('VariousItems');
-    RRIL.game.message = getParamString('Message');
-    RRIL.game.sound = paramParse(parameters['Sound']);
-
-    RRIL.itemLose = function(args) {
-        var scope = String(args[0]).toUpperCase();
-        var min = this.game.minCount;
-        var max = this.game.maxCount;
-        var value = Math.floor(Math.random() * (max + 1 - min)) + min;
-        if(args[1]) {
-            value = Number(args[1]);
-        }
-        var list = this.getScopeList(scope);
-        this.loseList = [];
-        if(list.length <= 0 || value <= 0) {
-            return;
-        }
-        while(value > 0) {
-            value -= this.setLoseList(list,value);
-            if(!this.game.variousItems) {
-                break;
+/**
+ * @class
+ * @classdesc アイテムのランダム消失プラグイン
+ */
+class Ricon_RandomItemLose {
+    /**
+     * @constructor
+     * @param {Object} gameParams ゲーム内プラグインパラメータ
+     */
+    constructor(gameParams) {
+        const _getParam = this.getParam.bind(this);
+        const _getParamBoolean = this.getParamBoolean.bind(this);
+        const _getParamNumber = this.getParamNumber.bind(this);
+        const _getParamString = this.getParamString.bind(this);
+        const _parseJson = this.parseJson.bind(this);
+        class _GameParams {
+            constructor() {
+                /**
+                 * @type {boolean} 消失するものに一般アイテムを含む
+                 */
+                this.includeItems = _getParamBoolean('IncludeItems');
+                /**
+                 * @type {boolean} 消失するものに武器を含む
+                 */
+                this.includeWeapons = _getParamBoolean('IncludeWeapons');
+                /**
+                 * @type {boolean} 消失するものに防具を含む
+                 */
+                this.includeArmors = _getParamBoolean('IncludeArmors');
+                /**
+                 * @type {boolean} 消失するものに大事なものを含む
+                 */
+                this.includeImportants = _getParamBoolean('IncludeImportants');
+                /**
+                 * @type {boolean} 消失するものに装備品を含む
+                 */
+                this.includeEquips = _getParamBoolean('IncludeEquips');
+                /**
+                 * @type {number} 消失する所持品の総数の最小値
+                 */
+                this.minCount = _getParamNumber('MinCount');
+                /**
+                 * @type {number} 消失する所持品の総数の最大値
+                 */
+                this.maxCount = _getParamNumber('MaxCount');
+                /**
+                 * @type {boolean} 消失するアイテムが複数種類になることを許可
+                 */
+                this.variousItems = _getParamBoolean('VariousItems');
+                /**
+                 * @type {string} アイテム消失時に表示するメッセージ
+                 */
+                this.message = _getParamString('Message');
+                /**
+                 * @type {Object} アイテム消失時に再生するSEの設定
+                 */
+                this.sound = _parseJson(_getParam('Sound'));
             }
         }
-        this.operateLose();
-    };
-    
-    RRIL.getScopeList = function(scope) {
-        this.setItemLists();
-        var items = this.lists.items;
-        var weapons = this.lists.weapons;
-        var armors = this.lists.armors;
-        var list = [];
-        switch(scope) {
-            case 'ALL':
-                list = items.concat(weapons,armors);
-                break;
-            case 'ITEM':
-                list = items;
-                break;
-            case 'WEAPON':
-                list = weapons;
-                break;
-            case 'ARMOR':
-                list = armors;
-                break;
-            case 'EQUIP':
-                list = weapons.concat(armors);
-                break;
-            default:
-                list = items.concat(weapons,armors);
-                break;
-        }
-        return list;
-    };
-
-    RRIL.setItemLists = function() {
-        var items = this.getPartyItems('item');
-        this.removeSecrets(items);
-        this.removeExceptions(items);
-        var weapons = this.getPartyItems('weapon');
-        this.addEquips(weapons,'weapon');
-        this.removeExceptions(weapons);
-        var armors = this.getPartyItems('armor');
-        this.addEquips(armors,'armor');
-        this.removeExceptions(armors);
-        if(!this.game.includeItems) {
-            items = [];
-        }
-        if(!this.game.includeWeapons) {
-            weapons = [];
-        }
-        if(!this.game.includeArmors) {
-            armors = [];
-        }
-        if(!this.game.includeImportants) {
-            items = this.removeImportants(items);
-        }
-        this.lists = this.lists || {};
-        this.lists.items = items;
-        this.lists.weapons = weapons;
-        this.lists.armors = armors;
-    };
-
-    RRIL.getPartyItems = function(type) {
-        var idList = {};
-        var itemList = [];
-        switch(type) {
-            case 'item':
-                idList = $gameParty._items;
-                break;
-            case 'weapon':
-                idList = $gameParty._weapons;
-                break;
-            case 'armor':
-                idList = $gameParty._armors;
-                break;
-            default:
-                break;
-        }
-        for(var id of Object.keys(idList)) {
-            var value = idList[id];
-            var data = {};
-            switch(type) {
-                case 'item':
-                    data = $dataItems[id];
-                    break;
-                case 'weapon':
-                    data = $dataWeapons[id];
-                    break;
-                case 'armor':
-                    data = $dataArmors[id];
-                    break;
-                default:
-                    break;
+        /**
+         * @type {_GameParams} ゲーム内パラメータ
+         */
+        this.gameParams = gameParams || new _GameParams();
+        class PartyItemData {
+            /**
+             * @param {IDataAllItem} data 
+             * @param {number} value 
+             */
+            constructor(data, value) {
+                /**
+                 * @type {IDataAllItem}
+                 */
+                this.data = data;
+                /**
+                 * @type {number}
+                 */
+                this.value = value;
             }
-            itemList.push({'data':data,'value':value});
         }
-        return itemList
-    };
-
-    RRIL.addEquips = function(list,scope) {
-        for(var i = 0; i < $gameParty.members().length; i++) {
-            var equips = $gameParty.members()[i]._equips;
-            for(var equip of equips) {
-                if((DataManager.isWeapon(equip) && scope == 'weapon') || 
-                   (DataManager.isArmor(equip) && scope == 'armor')) {
-                    list = list.push(equip);
+        class PartyItemList {
+            constructor() {
+                /**
+                 * @type {Array<PartyItemData>}
+                 */
+                this.list = new Array();
+            }
+            init() {
+                this.list = new Array();
+            }
+            /**
+             * @param {IDataAllItem} data 
+             * @param {number} value 
+             */
+            set(data, value) {
+                if (value <= 0) return;
+                this.list.push(new PartyItemData(data, value));
+            }
+            get() {
+                return this.list.filter(function(partyItemData) {
+                    return (!!partyItemData && !!partyItemData.data);
+                })
+            }
+            take(index, value) {
+                const itemData = this.list[index];
+                if (itemData.value <= value) {
+                    return this.list.splice(index, 1)[0];
+                } else {
+                    itemData.value -= value;
+                    return new PartyItemData(itemData.data, value);
                 }
             }
-        }
-        return list;
-    };
-
-    RRIL.removeExceptions = function(list) {
-        for(var i = 0; i < list.length; i++) {
-            var item = list[i]['data'];
-            if(DataManager.isItem(item) && item.meta['RandomLoseException']) {
-                list.splice(i--,1);
-            } else if(DataManager.isWeapon(item) && item.meta['RandomLoseException']) {
-                list.splice(i--,1);
-            } else if(DataManager.isArmor(item) && item.meta['RandomLoseException']) {
-                list.splice(i--,1);
+            size() {
+                return this.list.length;
             }
         }
-        return list;
-    };
-
-    RRIL.removeSecrets = function(list) {
-        for(var i = 0; i < list.length; i++) {
-            var type = list[i]['data'].itypeId;
-            if(type >= 3) {
-                list.splice(i--,1);
+        /**
+         * 各種アイテムリスト
+         */
+        this.lists = {
+            /** 
+             * @type {Map<string, number>} 一般アイテムリスト
+             */
+            items: new Map(),
+            /** 
+             * @type {Map<string, number>} 武器リスト
+             */
+            weapons: new Map(),
+            /** 
+             * @type {Map<string, number>} 防具リスト
+             */
+            armors: new Map(),
+            /**
+             * @type {PartyItemList} 消失対象アイテムリスト
+             */
+            targets: new PartyItemList(),
+            /**
+             * @type {PartyItemList} 消失アイテムリスト
+             */
+            loses: new PartyItemList()
+        };
+    }
+    /**
+     * @param {string} paramName プラグインパラメータ名
+     * @returns {string} プラグインパラメータ(未返還)
+     */
+    getParam(paramName) {
+        /**
+         * @type {PluginParameters} プラグインパラメータ・オブジェクト
+         */
+        const params = PluginManager.parameters('Ricon_RandomItemLose');
+        return params[paramName];
+    }
+    /**
+     * @param {string} paramName プラグインパラメータ名
+     * @returns {boolean} プラグインパラメータ(真偽値変換済み)
+     */
+    getParamBoolean(paramName) {
+        return ['ON', 'TRUE'].includes((this.getParam(paramName) || '').toUpperCase());
+    }
+    /**
+     * @param {string} paramName プラグインパラメータ名
+     * @returns {number} プラグインパラメータ(数値変換済み)
+     */
+    getParamNumber(paramName) {
+        return (parseInt(this.getParam(paramName), 10) || 0).clamp(-Infinity, Infinity);
+    }
+    /**
+     * @param {string} paramName プラグインパラメータ名
+     * @returns {string} プラグインパラメータ(文字列変換済み)
+     */
+    getParamString(paramName) {
+        return String(this.getParam(paramName));
+    }
+    /**
+     * @desc JSONのオブジェクト化
+     * @param {Object} obj プラグインパラメータ名
+     * @returns {Object} オブジェクト
+     */
+    parseJson(obj) {
+        return JSON.parse(JSON.stringify(obj, function(key, value) {
+            try {
+                return JSON.parse(value || null);
+            } catch (e) {
+                return value;
+            }
+        }));
+    }
+    /**
+     * @returns {boolean} 消失するものに一般アイテムを含むか否か
+     */
+    includesItems() {
+        return this.gameParams.includeItems;
+    }
+    /**
+     * @returns {boolean} 消失するものに武器を含むか否か
+     */
+    includesWeapons() {
+        return this.gameParams.includeWeapons;
+    }
+    /**
+     * @returns {boolean} 消失するものに防具を含むか否か
+     */
+    includesArmors() {
+        return this.gameParams.includeArmors;
+    }
+    /**
+     * @returns {boolean} 消失するものに大事なものを含むか否か
+     */
+    includesImportants() {
+        return this.gameParams.includeImportants;
+    }
+    /**
+     * @returns {boolean} 消失するものに装備品を含むか否か
+     */
+    includesEquips() {
+        return this.gameParams.includeEquips;
+    }
+    /**
+     * @returns {number} 消失する所持品の総数の最小値
+     */
+    getMinCount() {
+        return this.gameParams.minCount;
+    }
+    /**
+     * @returns {number} 消失する所持品の総数の最大値
+     */
+    getMaxCount() {
+        return this.gameParams.maxCount;
+    }
+    /**
+     * @returns {boolean} 消失するアイテムが複数種類になることを許可
+     */
+    allowsVariousItems() {
+        return this.gameParams.variousItems;
+    }
+    /**
+     * @returns {string} アイテム消失時に表示するメッセージ
+     */
+    getMessage() {
+        return this.gameParams.message;
+    }
+    /**
+     * @returns {Object} アイテム消失時に再生するSEの設定
+     */
+    getSound() {
+        return this.gameParams.sound;
+    }
+    /** 一般アイテムの追加
+     * @param {string} id 一般アイテムID
+     * @param {number} value 所持数
+     */
+    addItem(id, value) {
+        id = String(id);
+        const items = this.lists.items;
+        this.lists.items.set(id, value + (items.has(id) ? items.get(id) : 0));
+    }
+    /** 一般アイテムリストを対象リストに追加 */
+    concatItemList() {
+        if (!this.includesItems) return;
+        let data;
+        this.lists.items.forEach(function(value, id) {
+            data = $dataItems[id];
+            if (!this.includesImportants && data.itypeId === 2) return;
+            if (data.meta['RandomLoseException']) return;
+            this.lists.targets.set(data, value);
+        }.bind(this));
+    }
+    /** 武器の追加
+     * @param {string} id 武器ID
+     * @param {number} value 所持数
+     */
+    addWeapon(id, value) {
+        id = String(id);
+        const weapons = this.lists.weapons;
+        this.lists.weapons.set(id, value + (weapons.has(id) ? weapons.get(id) : 0));
+    }
+    /** 武器リストを対象リストに追加 */
+    concatWeaponList() {
+        if (!this.includesWeapons) return;
+        let data;
+        this.lists.weapons.forEach(function(value, id) {
+            data = $dataWeapons[id];
+            if (data.meta['RandomLoseException']) return;
+            this.lists.targets.set(data, value);
+        }.bind(this));
+    }
+    /** 防具の追加
+     * @param {string} id 防具ID
+     * @param {number} value 所持数
+     */
+    addArmor(id, value) {
+        id = String(id);
+        const armors = this.lists.armors;
+        this.lists.armors.set(id, value + (armors.has(id) ? armors.get(id) : 0));
+    }
+    /** 防具リストを対象リストに追加 */
+    concatArmorList() {
+        if (!this.includesArmors) return;
+        let data;
+        this.lists.armors.forEach(function(value, id) {
+            data = $dataArmors[id];
+            if (data.meta['RandomLoseException']) return;
+            this.lists.targets.set(data, value);
+        }.bind(this));
+    }
+    /**
+     * 所持アイテムリストの初期化
+     */
+    initLists() {
+        this.lists.targets.init();
+        this.lists.loses.init();
+        this.lists.items.clear();
+        this.lists.weapons.clear();
+        this.lists.armors.clear();
+        Object.keys($gameParty._items).forEach(function(id) {
+            this.addItem(id, $gameParty._items[id]);
+        }.bind(this));
+        Object.keys($gameParty._weapons).forEach(function(id) {
+            this.addWeapon(id, $gameParty._weapons[id]);
+        }.bind(this));
+        Object.keys($gameParty._armors).forEach(function(id) {
+            this.addArmor(id, $gameParty._armors[id]);
+        }.bind(this));
+        if (!this.includesEquips()) return;
+        // 装備品の追加
+        $gameParty.members().reduce(/** @param {Game_Item[]} equips */function(equips, member) {
+            return equips.concat(member.equips());
+        }, []).forEach(/** @param {Game_Item} equip */function(equip) {
+            if (!equip) return;
+            if (equip.itypeId > 0) {
+                this.addItem(equip.id, 1);
+            } else if (equip.wtypeId > 0) {
+                this.addWeapon(equip.id, 1);
+            } else if (equip.atypeId > 0) {
+                this.addArmor(equip.id, 1);
+            }
+        }.bind(this));
+    }
+    /**
+     * @desc アイテム消失処理
+     * @param {Array<string>} args プラグイン呼び出し引数
+     */
+    operateItemLose(args) {
+        const min = this.getMinCount();
+        const max = this.getMaxCount();
+        const [argScope, argValue] = args;
+        let value = (!!argValue)
+            ? parseInt(argValue)
+            : Math.floor(Math.random() * (max + 1 - min)) + min;
+        if (value <= 0) return;
+        const scope = String(argScope).toUpperCase();
+        this.setTargetList(scope);
+        while (value > 0) {
+            if (this.lists.targets.size() <= 0) {
+                break;
+            }
+            value -= this.randomLose(value);
+            if (!this.allowsVariousItems()) {
+                break;
             }
         }
-        return list;
-    };
-
-    RRIL.removeImportants = function(list) {
-        for(var i = 0; i < list.length; i++) {
-            var type = list[i]['data'].itypeId;
-            if(type == 2) {
-                list.splice(i--,1);
-            }
+        if (this.lists.loses.size() > 0) {
+            this.loseItem();
         }
-        return list;
-    };
-
-    RRIL.setLoseList = function(list,value) {
-        var listIndex = Math.floor(Math.random() * list.length);
-        var item = list[listIndex];
-        var itemValue = item['value'];
-        var randomValue = Math.floor(Math.random() * value) + 1;
-        var loseValue = !!this.game.variousItems ? randomValue : value;
-        if(randomValue >= itemValue) {
-            loseValue = itemValue;
-            list.splice(listIndex,1);
-        } else if(randomValue < itemValue){
-            list[listIndex]['value'] -= loseValue;
+    }
+    /**
+     * @desc 対象アイテムリストの初期化・設定
+     * @param {string} scope 対象
+     */
+    setTargetList(scope) {
+        this.initLists();
+        switch(scope) {
+        case 'ITEM':
+            this.concatItemList();
+            break;
+        case 'WEAPON':
+            this.concatWeaponList();
+            break;
+        case 'ARMOR':
+            this.concatArmorList();
+            break;
+        case 'EQUIP':
+            this.concatWeaponList();
+            this.concatArmorList();
+            break;
+        case 'ALL':
+        default:
+            this.concatItemList();
+            this.concatWeaponList();
+            this.concatArmorList();
+            break;
         }
-        var itemData = item['data'];
-        this.listRegulate(itemData,loseValue);
-        return loseValue;
-    };
-
-    RRIL.listRegulate = function(item,value) {
-        for(var i = 0; i < this.loseList.length; i++) {
-            if(item == this.loseList[i]['data']) {
-                this.loseList[i]['value'] += value;
-                return
-            }
-        }
-        this.loseList.push({'data':item,'value':value});
-    };
-
-    RRIL.operateLose = function() {
-        var sound = this.game.sound;
+    }
+    /**
+     * @desc ランダム消失
+     * @param {PartyItemData[]} list 所持アイテムデータリスト
+     * @param {number} value 消失数の最大値
+     */
+    randomLose(value) {
+        const listIndex = Math.floor(Math.random() * this.lists.targets.size());
+        const randomValue = Math.floor(Math.random() * value) + 1;
+        const loseValue = (this.allowsVariousItems()) ? randomValue : value;
+        const takenData = this.lists.targets.take(listIndex, loseValue);
+        this.lists.loses.set(takenData.data, takenData.value);
+        return takenData.value;
+    }
+    /**
+     * @desc アイテム消失実処理
+     */
+    loseItem() {
+        const sound = this.getSound();
         if(sound && sound['name']) {
-            sound['name'] = String(sound['name']);
-            sound['volume'] = Number(sound['volume']);
-            sound['pitch'] = Number(sound['pitch']);
-            sound['pan'] = Number(sound['pan']);
-            AudioManager.playSe(sound);
+            const _sound = {
+                name: String(sound['name']),
+                volume: Number(sound['volume']),
+                pitch: Number(sound['pitch']),
+                pan: Number(sound['pan'])
+            }
+            AudioManager.playSe(_sound);
         }
-        var template = this.game.message;
-        var heroName = $gameParty.members()[0].name;
-        var message = '';
-        var list = this.loseList;
-        for(var i = 0; i < list.length; i++) {
-            var itemName = list[i]['data'].name;
-            var value = list[i]['value'];
-            message = template.replace('%1',itemName);
-            message = message.replace('%2',value);
-            message = message.replace('%3',heroName);
+        const template = this.getMessage();
+        const actorName = $gameParty.members()[0].name;
+        let message = '';
+        /** @type {IDataAllItem} */
+        let data = null;
+        /** @type {string} */
+        let itemName = '';
+        /** @type {number} */
+        let value = 0;
+        const includeEquips = this.includesEquips();
+        this.lists.loses.get().forEach(function(partyItemData) {
+            data = partyItemData.data;
+            itemName = data.name;
+            value = partyItemData.value;
+            message = template
+                .replace('%1', itemName)
+                .replace('%2', value)
+                .replace('%3', actorName);
             $gameMessage.add(message);
-            var data = list[i]['data']
-            $gameParty.loseItem(data,value,this.game.includeEquips);
+            $gameParty.loseItem(data, value, includeEquips);
+        });
+    }
+    /**
+     * @desc プラグインパラメータの設定
+     * @param {string[]} args プラグイン呼び出し引数
+     */
+    operateSetting(args) {
+        const mode = String(args[0]).toUpperCase();
+        const value1 = args[1];
+        const value2 = args[2];
+        switch (mode) {
+        case 'INCLUDEITEMS':
+            this.gameParams.includeItems = this.setGameBoolean(value1, 'IncludeItems');
+            break;
+        case 'INCLUDEWEAPONS':
+            this.gameParams.includeWeapons = this.setGameBoolean(value1, 'IncludeWeapons');
+            break;
+        case 'INCLUDEARMORS':
+            this.gameParams.includeArmors = this.setGameBoolean(value1, 'IncludeArmors');
+            break;
+        case 'INCLUDEIMPORTANTS':
+            this.gameParams.includeImportants = this.setGameBoolean(value1, 'IncludeImportants');
+            break;
+        case 'INCLUDEEQUIPS':
+            this.gameParams.includeEquips = this.setGameBoolean(value1, 'IncludeEquips');
+            break;
+        case 'MINCOUNT':
+            this.gameParams.minCount = this.setGameNumber(value1, 'MinCount');
+            break;
+        case 'MAXCOUNT':
+            this.gameParams.maxCount = this.setGameNumber(value1, 'MaxCount');
+            break;
+        case 'VARIOUSITEMS':
+            this.gameParams.variousItems = this.setGameBoolean(value1, 'VariousItems');
+            break;
+        case 'MESSAGE':
+            const newMessage = args.slice(1).join(' ');
+            this.gameParams.message = this.setGameString(newMessage,'Message');
+            break;
+        case 'SOUND':
+            this.setGameSound(value1, value2);
+            break;
         }
-    };
-
-    RRIL.setting = function(args) {
-        var mode = String(args[0]).toUpperCase();
-        var value = args[1];
-        var value2 = args[2];
-        switch(mode) {
-            case 'INCLUDEITEMS':
-                this.game.includeItems = this.setGameBoolean(value,'IncludeItems');
-                break;
-            case 'INCLUDEWEAPONS':
-                this.game.includeWeapons = this.setGameBoolean(value,'IncludeWeapons');
-                break;
-            case 'INCLUDEARMORS':
-                this.game.includeArmors = this.setGameBoolean(value,'IncludeArmors');
-                break;
-            case 'INCLUDEIMPORTANTS':
-                this.game.includeImportants = this.setGameBoolean(value,'IncludeImportants');
-                break;
-            case 'INCLUDEEQUIPS':
-                this.game.includeEquips = this.setGameBoolean(value,'IncludeEquips');
-                break;
-            case 'MINCOUNT':
-                this.game.minCount = this.setGameNumber(value,'MinCount');
-                break;
-            case 'MAXCOUNT':
-                this.game.maxCount = this.setGameNumber(value,'MaxCount');
-                break;
-            case 'VARIOUSITEMS':
-                this.game.variousItems = this.setGameBoolean(value,'VariousItems');
-                break;
-            case 'MESSAGE':
-                var newMessage = args.slice(1).join(' ');
-                this.game.message = this.setGameString(newMessage,'Message');
-                break;
-            case 'SOUND':
-                this.setSound(value,value2);
-                break;
-        }
-    };
-
-    RRIL.setGameBoolean = function(value,name) {
-        var _value = String(value).toUpperCase()
-        if(_value == 'DEFAULT') {
-            return getParamBoolean(name);
-        } else if(_value == 'ON') {
+    }
+    setGameBoolean(value, name) {
+        switch (String(value).toUpperCase()) {
+        case 'ON':
             return true;
-        } else if(_value == 'OFF') {
+        case 'OFF':
             return false;
+        case 'DEFAULT':
+        default:
+            return this.getParamBoolean(name);
         }
-    };
-
-    RRIL.setGameNumber = function(value,name) {
-        if(String(value).toUpperCase() == 'DEFAULT') {
+    }
+    setGameNumber(value, name) {
+        if (String(value).toUpperCase() == 'DEFAULT') {
             return getParamNumber(name);
-        } else if(!isNaN(value)) {
-            return Math.abs(Number(value));
+        } else {
+            return Math.abs(parseInt(value));
         }
-    };
-
-    RRIL.setGameString = function(value,name) {
-        if(String(value).toUpperCase() == 'DEFAULT') {
+    }
+    setGameString(value, name) {
+        if (String(value).toUpperCase() == 'DEFAULT') {
             return getParamString(name);
         } else {
             return String(value);
         }
-    };
-
-    RRIL.setSound = function(param,value) {
-        console.log('SetSound');
-        var _param = String(param).toLowerCase();
-        if(String(value).toUpperCase() == 'DEFAULT') {
-            this.game.sound[_param] = paramParse('Sound')[_param];
+    }
+    setGameSound(param, value) {
+        const _param = String(param).toLowerCase();
+        if (String(value).toUpperCase() == 'DEFAULT') {
+            this.gameParams.sound[_param] = paramParse('Sound')[_param];
         } else if(_param == 'name') {
-            this.game.sound[_param] = String(value);
+            this.gameParams.sound[_param] = String(value);
         } else {
-            this.game.sound[_param] = Number(value);
+            this.gameParams.sound[_param] = Math.abc(parseInt(value));
         }
-        console.log(this.game.sound);
-    };
+    }
+}
 
-
+(function(){
+    const RRIL = new Ricon_RandomItemLose();
     //=============================================================================
     // Game_Interpreter
     //=============================================================================
-
-    var _Game_Interpreter_pluginCommand = Game_Interpreter.prototype.pluginCommand;
+    const _Game_Interpreter_pluginCommand = Game_Interpreter.prototype.pluginCommand;
     Game_Interpreter.prototype.pluginCommand = function(command, args) {
         _Game_Interpreter_pluginCommand.call(this, command, args);
         if(command == 'RandomLose') {
-            RRIL.itemLose(args);
+            RRIL.operateItemLose(args);
         }
         if(command == 'RandomLoseSetting') {
-            RRIL.setting(args);
+            RRIL.operateSetting(args);
         }
     };
 })()
