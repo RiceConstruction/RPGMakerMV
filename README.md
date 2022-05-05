@@ -13,8 +13,6 @@
 使用の連絡も不要ですが、ご連絡をいただけると喜びます。
 そのほかお問い合わせなども含めご連絡は以下にお願いします。
 
-Gmail: rice.construction.z@gmail.com
-
 Twitter: https://twitter.com/riceconstr
 
 
